@@ -219,8 +219,15 @@ function buildPetWidgetHtml(options = {}) {
      linear motion -- real movement accelerates out of a stop and decelerates
      into the next one. */
   .pet { position: absolute; bottom: 12px; left: 0; width: 46px; height: 50px; pointer-events: auto; cursor: pointer; transition: left 3.5s cubic-bezier(0.45,0,0.4,1); will-change: left, transform; }
-  .pet.is-facing-left { transform: scaleX(-1); }
+  .pet:hover .critter-flip { filter: brightness(1.08); }
+  /* The left/right flip lives on its own wrapper around JUST the critter
+     shape -- not on .pet itself. .pet also contains .pet__bubble, and
+     mirroring the whole element mirrored the speech text into unreadable
+     backwards writing whenever a pet walked right-to-left. */
+  .critter-flip { position: relative; width: 100%; height: 100%; }
+  .pet.is-facing-left .critter-flip { transform: scaleX(-1); }
   .pet.is-celebrating .critter { animation: pet-celebrate 0.5s ease-in-out 2 !important; }
+  .pet.is-hopping .critter { animation: pet-hop 0.38s ease-out 1 !important; }
 
   /* Ground contact shadow -- squashes/relaxes with the gait so the pet
      reads as having weight instead of floating. */
@@ -248,6 +255,9 @@ function buildPetWidgetHtml(options = {}) {
   @keyframes pet-walk-bob { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-5px) rotate(-2deg); } }
   @keyframes pet-settle { 0% { transform: scaleY(0.85) scaleX(1.1); } 45% { transform: scaleY(1.08) scaleX(0.95); } 70% { transform: scaleY(0.97) scaleX(1.02); } 100% { transform: scaleY(1) scaleX(1); } }
   @keyframes pet-celebrate { 0%, 100% { transform: translateY(0) rotate(0deg) scale(1); } 25% { transform: translateY(-14px) rotate(-12deg) scale(1.15); } 75% { transform: translateY(-14px) rotate(12deg) scale(1.15); } }
+  /* A quick squash-stretch hop for every single click -- crouch, spring
+     up, land with a bit of overshoot, settle. */
+  @keyframes pet-hop { 0% { transform: translateY(0) scale(1,1); } 20% { transform: translateY(2px) scale(1.12,0.88); } 55% { transform: translateY(-13px) scale(0.92,1.1); } 80% { transform: translateY(0) scale(1.06,0.95); } 100% { transform: translateY(0) scale(1,1); } }
 
   /* Eye blinks -- desynced per pet type so all three don't blink in
      lockstep, which is what would read as fake/robotic. */
@@ -325,8 +335,15 @@ function buildPetWidgetHtml(options = {}) {
   @keyframes bug-scuttle-a { 0%, 100% { transform: rotate(var(--r,0deg)) translateY(0); } 50% { transform: rotate(var(--r,0deg)) translateY(-2.5px); } }
   @keyframes bug-scuttle-b { 0%, 100% { transform: rotate(var(--r,0deg)) translateY(-2.5px); } 50% { transform: rotate(var(--r,0deg)) translateY(0); } }
 
+  /* --bubble-shift is set from JS (see say()) to nudge the bubble back
+     onscreen when a pet is near the left/right edge -- without it, a
+     centered bubble on a pet standing near either edge would run off
+     the viewport instead of wrapping visibly. The little pointer arrow
+     is counter-shifted by the same amount so it still points down at
+     the pet instead of drifting off with the bubble. */
   .pet__bubble {
-    position: absolute; bottom: 58px; left: 50%; transform: translateX(-50%) translateY(6px);
+    position: absolute; bottom: 58px; left: 50%; --bubble-shift: 0px;
+    transform: translateX(calc(-50% + var(--bubble-shift))) translateY(6px);
     background: var(--card-bg, #242019); color: var(--text, #f0e9e0); border: 1px solid var(--border, #3a332a);
     border-radius: 10px; padding: 6px 10px; font-size: 0.74rem; line-height: 1.35;
     white-space: normal; width: max-content; max-width: 220px; text-align: center;
@@ -334,9 +351,10 @@ function buildPetWidgetHtml(options = {}) {
     opacity: 0; visibility: hidden; transition: opacity 0.2s ease, transform 0.2s ease;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
-  .pet__bubble.is-visible { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+  .pet__bubble.is-visible { opacity: 1; visibility: visible; transform: translateX(calc(-50% + var(--bubble-shift))) translateY(0); }
   .pet__bubble::after {
-    content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    content: ""; position: absolute; top: 100%; left: 50%;
+    transform: translateX(calc(-50% - var(--bubble-shift)));
     border: 6px solid transparent; border-top-color: var(--border, #3a332a);
   }
   @media (max-width: 640px) { .pet-layer { display: none; } }
@@ -345,17 +363,17 @@ function buildPetWidgetHtml(options = {}) {
   <div class="pet pet--claude" id="pet-claude">
     <div class="pet__bubble" id="pet-claude-bubble"></div>
     <div class="pet__shadow"></div>
-    ${CLAUDE_CRITTER_HTML}
+    <div class="critter-flip">${CLAUDE_CRITTER_HTML}</div>
   </div>
   <div class="pet pet--codex" id="pet-codex">
     <div class="pet__bubble" id="pet-codex-bubble"></div>
     <div class="pet__shadow"></div>
-    ${CODEX_CRITTER_HTML}
+    <div class="critter-flip">${CODEX_CRITTER_HTML}</div>
   </div>
   <div class="pet pet--bug" id="pet-bug">
     <div class="pet__bubble" id="pet-bug-bubble"></div>
     <div class="pet__shadow"></div>
-    ${BUG_CRITTER_HTML}
+    <div class="critter-flip">${BUG_CRITTER_HTML}</div>
   </div>
 </div>
 <script>
@@ -370,14 +388,31 @@ function buildPetWidgetHtml(options = {}) {
     var bubble = document.getElementById(bubbleId);
     if (!pet || !bubble) return;
 
+    var baseSpeedMs = speedMs || 3500;
     var facingLeft = false;
     pet.style.left = startLeft + "px";
-    pet.style.transitionDuration = (speedMs || 3500) + "ms";
+    pet.style.transitionDuration = baseSpeedMs + "ms";
 
     function maxLeft() { return Math.max(0, window.innerWidth - (pet.offsetWidth || 46) - 8); }
 
     function say(text, durationMs) {
       bubble.textContent = text;
+      // Reset any previous shift before measuring -- otherwise a bubble
+      // nudged right on its last line would measure as already-clear of
+      // the left edge even if the pet (and thus the bubble's natural
+      // centered position) has since walked back toward it.
+      bubble.style.setProperty("--bubble-shift", "0px");
+      var rect = bubble.getBoundingClientRect();
+      var margin = 8;
+      var shift = 0;
+      if (rect.left < margin) {
+        shift = margin - rect.left;
+      } else if (rect.right > window.innerWidth - margin) {
+        shift = (window.innerWidth - margin) - rect.right;
+      }
+      if (shift !== 0) {
+        bubble.style.setProperty("--bubble-shift", shift + "px");
+      }
       bubble.classList.add("is-visible");
       window.clearTimeout(bubble._hideTimer);
       bubble._hideTimer = window.setTimeout(function () {
@@ -394,7 +429,10 @@ function buildPetWidgetHtml(options = {}) {
 
     // Real animals don't launch from a standstill at full speed: a brief
     // squash-down anticipation, then the step cycle kicks in; on arrival,
-    // an elastic "settle" overshoot instead of stopping dead.
+    // an elastic "settle" overshoot instead of stopping dead. If a
+    // speech bubble happens to be up when this walk starts, slow the
+    // pace down for just this leg of the walk so the pet doesn't wander
+    // off mid-sentence -- easier to read while it's still nearby.
     function walkToRandomSpot() {
       var current = parseFloat(pet.style.left) || 0;
       var target = Math.random() * maxLeft();
@@ -403,6 +441,9 @@ function buildPetWidgetHtml(options = {}) {
         facingLeft = nowFacingLeft;
         pet.classList.toggle("is-facing-left", facingLeft);
       }
+
+      var isTalking = bubble.classList.contains("is-visible");
+      pet.style.transitionDuration = (isTalking ? Math.round(baseSpeedMs * 1.6) : baseSpeedMs) + "ms";
 
       pet.classList.add("is-anticipating");
       window.setTimeout(function () {
@@ -427,18 +468,25 @@ function buildPetWidgetHtml(options = {}) {
     pet.addEventListener("click", function () {
       var now = Date.now();
       if (now - lastClickTime < 350) {
-        // Treat as a double-click: bigger reaction.
+        // Double-click: bigger reaction -- replaces the hop with a full
+        // celebration wiggle plus a louder, longer-lived line.
+        pet.classList.remove("is-hopping");
         pet.classList.add("is-celebrating");
         window.setTimeout(function () { pet.classList.remove("is-celebrating"); }, 1000);
         say("🎉 " + QUOTE_BANK[Math.floor(Math.random() * QUOTE_BANK.length)], 4000);
       } else {
+        // Every single click gets an immediate little jump -- previously
+        // only double-click had any reaction at all, so a first click
+        // looked like nothing happened.
+        pet.classList.add("is-hopping");
+        window.setTimeout(function () { pet.classList.remove("is-hopping"); }, 380);
         say(pickLine(), 2600);
       }
       lastClickTime = now;
     });
 
     walkToRandomSpot();
-    window.setInterval(walkToRandomSpot, (speedMs || 3500) + 700 + Math.random() * 2600);
+    window.setInterval(walkToRandomSpot, baseSpeedMs + 700 + Math.random() * 2600);
   }
 
   setupPet("pet-claude", "pet-claude-bubble", CLAUDE_LINES, 40, 3500);

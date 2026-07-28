@@ -119,6 +119,45 @@ describe("buildPetWidgetHtml", () => {
     expect(html).not.toMatch(/transition:\s*left\s+[\d.]+s\s+linear/);
   });
 
+  test("flips only the critter shape when facing left, not the whole .pet -- so bubble text never gets mirrored", () => {
+    const html = buildPetWidgetHtml();
+    // the facing-left rule must target a nested wrapper, not `.pet` itself
+    expect(html).toMatch(/\.pet\.is-facing-left \.critter-flip\s*\{\s*transform:\s*scaleX\(-1\);?\s*\}/);
+    expect(html).not.toMatch(/\.pet\.is-facing-left\s*\{\s*transform:\s*scaleX\(-1\)/);
+    // the bubble element must live outside the flip wrapper in the markup
+    const bubbleIndex = html.indexOf('id="pet-claude-bubble"');
+    const flipWrapperIndex = html.indexOf('class="critter-flip"');
+    expect(bubbleIndex).toBeGreaterThan(-1);
+    expect(flipWrapperIndex).toBeGreaterThan(bubbleIndex);
+  });
+
+  test("clamps the speech bubble back onscreen near viewport edges via a JS-computed CSS variable", () => {
+    const html = buildPetWidgetHtml();
+    expect(html).toContain("--bubble-shift");
+    expect(html).toContain('bubble.style.setProperty("--bubble-shift"');
+    expect(html).toContain("getBoundingClientRect()");
+    // the pointer arrow must counter-shift so it still points at the pet
+    expect(html).toContain("calc(-50% - var(--bubble-shift))");
+  });
+
+  test("every single click triggers an immediate hop, not just double-click", () => {
+    const html = buildPetWidgetHtml();
+    expect(html).toContain("is-hopping");
+    expect(html).toContain("pet-hop");
+    expect(html).toContain('pet.classList.add("is-hopping")');
+  });
+
+  test("slows down movement while a bubble is showing, so the pet doesn't wander off mid-sentence", () => {
+    const html = buildPetWidgetHtml();
+    expect(html).toContain('bubble.classList.contains("is-visible")');
+    expect(html).toContain("baseSpeedMs * 1.6");
+  });
+
+  test("gives a subtle hover cue signaling the pet is clickable", () => {
+    const html = buildPetWidgetHtml();
+    expect(html).toContain(".pet:hover");
+  });
+
   test("does not clip the speech bubble -- the pet layer has no overflow:hidden", () => {
     const html = buildPetWidgetHtml();
     const layerRuleMatch = html.match(/\.pet-layer\s*\{[^}]*\}/);
