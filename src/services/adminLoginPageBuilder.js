@@ -4,6 +4,8 @@
 // password): this one is a single-person secret, styled distinctly
 // (a lock icon, not a sparkle) so the two gates don't look identical.
 
+const { buildPetWidgetHtml } = require("./petWidget");
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, "&amp;")
@@ -69,6 +71,13 @@ function buildAdminLoginPageHtml(basePath, returnTo = `${basePath}/admin/devices
       <button type="submit">Enter</button>
     </form>
   </div>
+  ${buildPetWidgetHtml({
+    claudeLines: wrongPasskey
+      ? ["That's not it. Try again?", "Shh, this bit's just for admins."]
+      : ["Authorized personnel only past this point.", "I won't tell anyone your passkey. Promise."],
+    codexLines: ["access control: enforced.", "01100001 01100100 01101101 01101001 01101110"],
+    bugLines: ["I heard admins get the good bugs.", "🔒 locked out, same as you."],
+  })}
 </body>
 </html>`;
 }

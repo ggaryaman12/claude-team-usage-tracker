@@ -1,9 +1,9 @@
 const { logger } = require("../utilities/logger");
 
 /**
- * Posts a message to a Google Chat space via an incoming webhook — the
- * standard Google Chat pattern: plain axios POST of {text} to a webhook
- * URL shaped like
+ * Posts a message to a Google Chat space via an incoming webhook — the same
+ * mechanism the internal repo already uses in production (the standard Google Chat webhook pattern):
+ * plain axios POST of {text} to a webhook URL shaped like
  * https://chat.googleapis.com/v1/spaces/<SPACE_ID>/messages?key=...&token=...
  *
  * No OAuth, no service account — the URL itself is the credential. Never

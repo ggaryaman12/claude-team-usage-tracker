@@ -4,6 +4,8 @@
 // there's nothing sensitive on it — just instructions plus a form that
 // only accepts a known @example.com email (see knownRequestersStore.js).
 
+const { buildPetWidgetHtml } = require("./petWidget");
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, "&amp;")
@@ -94,7 +96,7 @@ function buildRequestAccessPageHtml(account, basePath, opts = {}) {
       <input type="hidden" name="account" value="${escapeHtml(account.name)}" />
       <label for="requesterEmail">Your email</label>
       ${errorMessage ? `<div class="form-error">${escapeHtml(errorMessage)}</div>` : ""}
-      <input type="email" id="requesterEmail" name="requesterEmail" placeholder="you@yourcompany.com" value="${escapeHtml(prefillEmail)}" class="${errorMessage ? "has-error" : ""}" required autofocus="${errorMessage ? "true" : "false"}" />
+      <input type="email" id="requesterEmail" name="requesterEmail" placeholder="you@example.com" value="${escapeHtml(prefillEmail)}" class="${errorMessage ? "has-error" : ""}" required autofocus="${errorMessage ? "true" : "false"}" />
       <div class="hint">Must match a known team email.</div>
       <button type="submit">Confirm — I've submitted the claude.ai form</button>
     </form>
@@ -116,6 +118,15 @@ function buildRequestAccessPageHtml(account, basePath, opts = {}) {
       });
     });
   </script>
+  ${buildPetWidgetHtml({
+    claudeLines: [
+      `Requesting access to ${account.name}'s account…`,
+      "Remember: never share your real password, only the login email.",
+      "I'll watch for the sign-in link once you confirm!",
+    ],
+    codexLines: ["access request logged.", "watching for the sign-in link…", "transparency > secrecy."],
+    bugLines: ["I hope nobody's account is as buggy as me.", "sign-in link incoming (probably)."],
+  })}
 </body>
 </html>`;
 }

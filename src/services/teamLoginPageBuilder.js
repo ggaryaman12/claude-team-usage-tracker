@@ -3,6 +3,8 @@
 // stakes "keep it off random search/link-sharing" gate the whole team
 // knows, not a per-person secret. See server.js's requireTeamPassword.
 
+const { buildPetWidgetHtml } = require("./petWidget");
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, "&amp;")
@@ -70,6 +72,13 @@ function buildTeamLoginPageHtml(basePath, returnTo = `${basePath}/dashboard`, wr
     </form>
     <div class="hint">Don't have it? Check the pinned message in the Google Chat usage group, or the most recent hourly usage post.</div>
   </div>
+  ${buildPetWidgetHtml({
+    claudeLines: wrongPassword
+      ? ["That wasn't quite it — check the Chat group for the real one!", "Psst, it's pinned in the group chat."]
+      : ["Psst — the password's in the group chat.", "Waiting for you to type it in!"],
+    codexLines: ["authentication pending…", "01110000 01100001 01110011 01110011"],
+    bugLines: ["I don't know the password either.", "locked out with you."],
+  })}
 </body>
 </html>`;
 }

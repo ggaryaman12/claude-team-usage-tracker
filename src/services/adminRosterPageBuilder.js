@@ -3,6 +3,8 @@
 // accepted (see knownRequestersStore.js). Same warm theme as the rest of
 // the site, matching adminDevicesPageBuilder.js's "back to..." nav pattern.
 
+const { buildPetWidgetHtml } = require("./petWidget");
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, "&amp;")
@@ -83,6 +85,14 @@ function buildAdminRosterPageHtml(roster, basePath, errorMessage = "") {
     <tbody>${rows || `<tr><td colspan="3" class="empty-row">Roster is empty.</td></tr>`}</tbody>
   </table>
 </div>
+${buildPetWidgetHtml({
+  claudeLines: [
+    `${roster.length} teammate${roster.length === 1 ? "" : "s"} can request access right now.`,
+    errorMessage ? "Hmm, that didn't work — check the error above." : "Add someone new with the form up top!",
+  ],
+  codexLines: ["syncing roster…", "01110010 01101111 01110011 01110100 01100101 01110010"],
+  bugLines: ["I'm not on the roster. Rude.", "roster.length > 0 ? good : concerning"],
+})}
 </body>
 </html>`;
 }

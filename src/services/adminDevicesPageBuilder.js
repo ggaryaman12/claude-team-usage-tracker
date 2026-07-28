@@ -14,6 +14,7 @@
 // idle indicator, and a recent raw check-in log.
 
 const { buildSparklineSvg } = require("./sparklineSvg");
+const { buildPetWidgetHtml } = require("./petWidget");
 
 function buildPersonTable(personRows) {
   if (!personRows || personRows.length === 0) return "";
@@ -311,6 +312,16 @@ function buildAdminDevicesHtml(rows, personRows = [], generatedAtIso = new Date(
       : `<div class="grid">${cards}</div>`
   }
 </div>
+${buildPetWidgetHtml({
+  claudeLines: [
+    `${rows.length} device${rows.length === 1 ? "" : "s"} on record, ${liveCount} live right now.`,
+    sharedCount > 0
+      ? `⚠️ ${sharedCount} device${sharedCount === 1 ? " is" : "s are"} being shared across accounts.`
+      : "No devices are double-booked right now.",
+  ],
+  codexLines: ["indexing device fingerprints…", "01100100 01100101 01110110 01101001 01100011 01100101"],
+  bugLines: ["I live on one of these devices. Which one? Unclear.", `${totalCheckIns} check-ins and counting.`],
+})}
 </body>
 </html>`;
 }

@@ -17,6 +17,7 @@
 const { buildProgressBar } = require("./progressBar");
 const { buildSparklineSvg } = require("./sparklineSvg");
 const { DEVICE_FRESHNESS_WINDOW_LABEL } = require("./deviceActivity");
+const { buildPetWidgetHtml } = require("./petWidget");
 
 const STATUS_META = {
   available: { emoji: "🟢", label: "Available", color: "#1e8e3e" },
@@ -261,6 +262,27 @@ function buildDashboardHtml(data) {
   });
   const manageTab = buildManageTab(accounts, { ...urls, onboardingMessage });
   const logsTab = buildLogsTab(recentLogs);
+
+  const dashboardClaudeLines = [
+    `${summary.totalAccounts} account${summary.totalAccounts === 1 ? "" : "s"} under watch, ${summary.freshCount} reporting fresh data.`,
+    summary.multiDeviceAccounts > 0
+      ? `⚠️ ${summary.multiDeviceAccounts} account${summary.multiDeviceAccounts === 1 ? " is" : "s are"} being shared right now.`
+      : "No shared-account overlaps right now — looking tidy!",
+    teamAnalytics && teamAnalytics.hasData && teamAnalytics.busiestAccountName
+      ? `${teamAnalytics.busiestAccountName} is the busiest account lately.`
+      : "Click a card's Request Access button if you need to borrow capacity.",
+  ];
+  const dashboardCodexLines = [
+    "compiling usage stats…",
+    `refresh cycle: 60s. status: nominal.`,
+    "01000100 01000001 01010100 01000001",
+  ];
+  const dashboardBugLines = [
+    teamAnalytics && teamAnalytics.hasData && teamAnalytics.totalExhaustedEvents > 0
+      ? `I've caused ${teamAnalytics.totalExhaustedEvents} exhaustion event${teamAnalytics.totalExhaustedEvents === 1 ? "" : "s"} so far. Oops.`
+      : "No exhaustion events yet. I'm bored.",
+    "found a rate limit. reported it. felt useful.",
+  ];
 
   return `<!doctype html>
 <html lang="en">
@@ -562,6 +584,11 @@ function buildDashboardHtml(data) {
   });
 })();
 </script>
+  ${buildPetWidgetHtml({
+    claudeLines: dashboardClaudeLines,
+    codexLines: dashboardCodexLines,
+    bugLines: dashboardBugLines,
+  })}
 </body>
 </html>`;
 }
