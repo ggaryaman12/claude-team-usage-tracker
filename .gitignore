@@ -1,0 +1,10 @@
+node_modules/
+.env
+src/config/accounts.js
+src/config/accounts.json
+src/config/relayToken.json
+src/config/reportedUsage.json
+src/config/usageHistory.json
+src/config/knownRequesters.json
+*.log
+npm-debug.log*

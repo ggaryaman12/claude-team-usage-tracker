@@ -1,0 +1,42 @@
+{
+  "name": "claude-usage-bot",
+  "version": "1.0.0",
+  "license": "MIT",
+  "description": "Self-hosted Google Chat + web dashboard for tracking shared Claude Pro/Max account usage across a team, with a request-access relay flow.",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "claude-pro",
+    "anthropic",
+    "google-chat",
+    "usage-tracker",
+    "usage-dashboard",
+    "team-tools",
+    "rate-limit-monitor",
+    "internal-tool",
+    "express",
+    "nodejs",
+    "self-hosted",
+    "devtools"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ggaryaman12/claude-team-usage-tracker.git"
+  },
+  "homepage": "https://github.com/ggaryaman12/claude-team-usage-tracker#readme",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "body-parser": "^1.20.3",
+    "express": "^4.21.2",
+    "google-auth-library": "^9.14.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4"
+  }
+}
