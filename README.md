@@ -1,11 +1,15 @@
 # claude-usage-bot
 
+[![GitHub stars](https://img.shields.io/github/stars/ggaryaman12/claude-team-usage-tracker?style=social)](https://github.com/ggaryaman12/claude-team-usage-tracker/stargazers)
+
 **Self-hosted Google Chat + web dashboard for tracking shared Claude Pro/Max usage across a team — plus a safe, auditable relay for requesting access to a teammate's account when your own runs dry.**
 
 If your team shares a handful of Claude Pro/Max seats, this answers the questions that come up every day: *who's using how much, right now? whose limit is about to reset? can I borrow spare capacity from someone else's account without just asking for their password in a DM?*
 
+If this saves your team from "who's using the account right now?" in chat every day, a ⭐ on the repo helps others find it — that's the only ask.
+
 <p align="center">
-  <img src="docs/screenshots/dashboard.jpg" alt="Team usage dashboard" width="100%" />
+  <img src="docs/screenshots/product-tour.gif" alt="Product tour: usage dashboard, request-access flow, device consumption view" width="100%" />
 </p>
 
 > All data in every screenshot in this README is synthetic/mock — no real accounts, emails, or company data. See [Data & privacy](#data--privacy).
