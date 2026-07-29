@@ -27,8 +27,21 @@ function buildUsageLine(result) {
     : `stale, last seen ${result.ageMinutes}m ago`;
   const fiveHourBar = buildProgressBar(result.fiveHourPctUsed);
   const sevenDayBar = buildProgressBar(result.sevenDayPctUsed);
-  const fiveHourReset = result.fiveHourResetLabel ? ` <font color="#5f6368">— ${result.fiveHourResetLabel}</font>` : "";
-  const sevenDayReset = result.sevenDayResetLabel ? ` <font color="#5f6368">— ${result.sevenDayResetLabel}</font>` : "";
+  // When the known reset time for a window has already passed but nobody's
+  // used the account since (so no fresh report ever confirmed it), the
+  // percentage shown is inferred from that timestamp, not measured — say
+  // so explicitly rather than silently showing a bare "0%" that looks
+  // exactly like a real fresh reading.
+  const fiveHourReset = result.fiveHourWasInferredReset
+    ? ` <font color="#1e8e3e">— reset assumed, not yet confirmed by a report</font>`
+    : result.fiveHourResetLabel
+      ? ` <font color="#5f6368">— ${result.fiveHourResetLabel}</font>`
+      : "";
+  const sevenDayReset = result.sevenDayWasInferredReset
+    ? ` <font color="#1e8e3e">— reset assumed, not yet confirmed by a report</font>`
+    : result.sevenDayResetLabel
+      ? ` <font color="#5f6368">— ${result.sevenDayResetLabel}</font>`
+      : "";
   // Only worth interrupting the card for when it's actually notable: 2+
   // devices reporting for the same account within the freshness window
   // means it's genuinely in use from two places at once, not just that

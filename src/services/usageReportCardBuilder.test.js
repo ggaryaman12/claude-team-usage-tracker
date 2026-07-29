@@ -58,6 +58,32 @@ describe("buildUsageReportCardMessage", () => {
     expect(decoratedText.text).toContain("resets in 3d 4h (Fri 9:00 AM)");
   });
 
+  test("flags an inferred reset explicitly instead of showing a bare 0% that looks like a real fresh reading", () => {
+    const results = [
+      {
+        name: "Alice",
+        contact: "@alice",
+        hasReport: true,
+        isFresh: false,
+        ageMinutes: 180,
+        fiveHourPctUsed: 0,
+        sevenDayPctUsed: 45,
+        fiveHourWasInferredReset: true,
+        fiveHourResetLabel: null,
+        sevenDayWasInferredReset: false,
+        sevenDayResetLabel: "resets in 2d (Thu 9:00 AM)",
+        status: "available",
+      },
+    ];
+
+    const message = buildUsageReportCardMessage(results, BASE);
+    const decoratedText = message.cardsV2[0].card.sections[0].widgets[0].decoratedText;
+
+    expect(decoratedText.text).toContain("reset assumed, not yet confirmed by a report");
+    // the 7day window has a real label and shouldn't also claim an inferred reset
+    expect(decoratedText.text).toContain("resets in 2d (Thu 9:00 AM)");
+  });
+
   test("omits reset labels cleanly when not available", () => {
     const results = [
       {

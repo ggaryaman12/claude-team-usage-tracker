@@ -43,11 +43,18 @@ function buildSummary(results) {
   return { totalAccounts, reporting, freshCount, multiDeviceAccounts, totalActiveDevices };
 }
 
-function buildBarRow(label, pctUsed, resetLabel) {
+function buildBarRow(label, pctUsed, resetLabel, wasInferredReset) {
   const bar = buildProgressBar(pctUsed);
-  const resetHtml = resetLabel
-    ? `<span class="reset">${escapeHtml(resetLabel)}</span>`
-    : `<span class="reset reset--unknown">reset time unknown</span>`;
+  // Three distinct states, each worth saying differently: a real reset
+  // countdown, an inferred reset (the known reset time passed but no
+  // fresh report has confirmed the new number yet -- see
+  // usageReportComposer.js's applyInferredReset), or genuinely no reset
+  // info at all (this account has never reported a resets_at).
+  const resetHtml = wasInferredReset
+    ? `<span class="reset reset--inferred">reset assumed — no report since</span>`
+    : resetLabel
+      ? `<span class="reset">${escapeHtml(resetLabel)}</span>`
+      : `<span class="reset reset--unknown">reset time unknown</span>`;
   return `<div class="bar-row">
     <span class="bar-label">${label}</span>
     <span class="bar-track" aria-hidden="true">${escapeHtml(bar)}</span>
@@ -136,8 +143,8 @@ function buildAccountCard(result, analytics, requestBaseUrl) {
       <span class="status-pill" style="--pill-color:${meta.color}">${meta.emoji} ${meta.label}</span>
     </div>
     <div class="account-contact">${escapeHtml(result.contact)}</div>
-    ${buildBarRow("5hr", result.fiveHourPctUsed, result.fiveHourResetLabel)}
-    ${buildBarRow("7day", result.sevenDayPctUsed, result.sevenDayResetLabel)}
+    ${buildBarRow("5hr", result.fiveHourPctUsed, result.fiveHourResetLabel, result.fiveHourWasInferredReset)}
+    ${buildBarRow("7day", result.sevenDayPctUsed, result.sevenDayResetLabel, result.sevenDayWasInferredReset)}
     <div class="freshness${result.isFresh ? "" : " freshness--stale"}">${freshness}</div>
     ${(result.activeCount || 0) > 1 ? `<div class="alert-banner">⚠️ ${result.activeCount} devices active on this account in the ${DEVICE_FRESHNESS_WINDOW_LABEL}</div>` : ""}
     ${buildAnalyticsBlock(analytics)}
@@ -393,6 +400,7 @@ function buildDashboardHtml(data) {
   .bar-pct { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
   .reset { color: var(--muted); font-size: 0.78rem; }
   .reset--unknown { font-style: italic; }
+  .reset--inferred { color: #1e8e3e; font-style: italic; }
   .freshness { color: var(--muted); font-size: 0.78rem; margin-top: 8px; }
   .freshness--stale { color: #e37400; }
   .alert-banner {

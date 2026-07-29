@@ -140,6 +140,35 @@ describe("buildDashboardHtml", () => {
     expect(html).toContain("&lt;script&gt;");
   });
 
+  test("flags an inferred reset explicitly instead of silently showing a bare 0%", () => {
+    const results = [
+      {
+        name: "Alice",
+        contact: "@alice",
+        hasReport: true,
+        isFresh: false,
+        ageMinutes: 180,
+        fiveHourPctUsed: 0,
+        sevenDayPctUsed: 45,
+        fiveHourWasInferredReset: true,
+        fiveHourResetLabel: null,
+        sevenDayWasInferredReset: false,
+        sevenDayResetLabel: "resets in 2d (Thu 9:00 AM)",
+        status: "available",
+      },
+    ];
+    const html = build({ results });
+    expect(html).toContain("reset assumed — no report since");
+    expect(html).toContain("resets in 2d (Thu 9:00 AM)");
+  });
+
+  test("distinguishes 'reset time unknown' (never reported one) from an inferred reset", () => {
+    const results = [{ name: "Alice", contact: "@alice", hasReport: true, isFresh: true, ageMinutes: 1, fiveHourPctUsed: 10, sevenDayPctUsed: 5, status: "available" }];
+    const html = build({ results });
+    expect(html).toContain("reset time unknown");
+    expect(html).not.toContain("reset assumed");
+  });
+
   test("shows a 'not enough history' note when an account has no analytics yet", () => {
     const results = [{ name: "Alice", contact: "@alice", hasReport: true, isFresh: true, ageMinutes: 1, fiveHourPctUsed: 10, sevenDayPctUsed: 5, status: "available" }];
     const html = build({ results });

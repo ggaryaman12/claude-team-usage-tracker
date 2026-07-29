@@ -110,6 +110,82 @@ describe("composeUsageResults", () => {
     expect(results[0].devices).toHaveLength(2);
   });
 
+  test("infers a window has reset to 0% once its known reset time has passed, even with no fresh report", () => {
+    // Exactly the reported scenario: last real report showed 30% used
+    // with a reset in 3 hours; nobody used the account since, so no new
+    // report ever confirmed the reset -- but the reset time itself has
+    // now passed, so the window should read as reset, not stuck at 30%.
+    const now = new Date("2026-07-28T23:00:00.000Z").getTime(); // 11 PM
+    const getReportedUsageFn = jest.fn().mockReturnValue({
+      fiveHourPctUsed: 30,
+      sevenDayPctUsed: 45,
+      reportedAt: new Date("2026-07-28T20:00:00.000Z").toISOString(), // reported at 8 PM
+      fiveHourResetsAt: "2026-07-28T23:00:00.000Z", // reset was due exactly at 11 PM -- now
+      sevenDayResetsAt: "2026-08-02T00:00:00.000Z", // not due yet
+    });
+
+    const results = composeUsageResults([accounts[0]], getReportedUsageFn, () => now);
+
+    expect(results[0].fiveHourPctUsed).toBe(0);
+    expect(results[0].fiveHourWasInferredReset).toBe(true);
+    expect(results[0].fiveHourResetLabel).toBeNull(); // no known next-reset time until a fresh report
+    // the 7-day window hasn't reset yet -- untouched
+    expect(results[0].sevenDayPctUsed).toBe(45);
+    expect(results[0].sevenDayWasInferredReset).toBe(false);
+    expect(results[0].sevenDayResetLabel).toContain("resets in");
+  });
+
+  test("does not infer a reset before the known reset time has actually passed", () => {
+    const now = new Date("2026-07-28T22:59:00.000Z").getTime(); // 1 min before reset
+    const getReportedUsageFn = jest.fn().mockReturnValue({
+      fiveHourPctUsed: 30,
+      sevenDayPctUsed: 45,
+      reportedAt: new Date("2026-07-28T20:00:00.000Z").toISOString(),
+      fiveHourResetsAt: "2026-07-28T23:00:00.000Z",
+    });
+
+    const results = composeUsageResults([accounts[0]], getReportedUsageFn, () => now);
+
+    expect(results[0].fiveHourPctUsed).toBe(30);
+    expect(results[0].fiveHourWasInferredReset).toBe(false);
+    expect(results[0].fiveHourResetLabel).toContain("resets in");
+  });
+
+  test("a real fresh report after the reset replaces the inferred 0% with the actual measured value", () => {
+    const now = new Date("2026-07-29T00:00:00.000Z").getTime();
+    const getReportedUsageFn = jest.fn().mockReturnValue({
+      fiveHourPctUsed: 12, // a real post-reset report came in
+      sevenDayPctUsed: 46,
+      reportedAt: new Date("2026-07-29T00:00:00.000Z").toISOString(),
+      fiveHourResetsAt: "2026-07-29T05:00:00.000Z", // next reset, still in the future
+      sevenDayResetsAt: "2026-08-02T00:00:00.000Z",
+    });
+
+    const results = composeUsageResults([accounts[0]], getReportedUsageFn, () => now);
+
+    expect(results[0].fiveHourPctUsed).toBe(12);
+    expect(results[0].fiveHourWasInferredReset).toBe(false);
+  });
+
+  test("marks both windows as inferred-reset independently when both have passed their reset time", () => {
+    const now = new Date("2026-08-03T00:00:00.000Z").getTime();
+    const getReportedUsageFn = jest.fn().mockReturnValue({
+      fiveHourPctUsed: 90,
+      sevenDayPctUsed: 100,
+      reportedAt: new Date("2026-07-28T20:00:00.000Z").toISOString(),
+      fiveHourResetsAt: "2026-07-28T23:00:00.000Z",
+      sevenDayResetsAt: "2026-08-02T00:00:00.000Z",
+    });
+
+    const results = composeUsageResults([accounts[0]], getReportedUsageFn, () => now);
+
+    expect(results[0].fiveHourPctUsed).toBe(0);
+    expect(results[0].sevenDayPctUsed).toBe(0);
+    expect(results[0].fiveHourWasInferredReset).toBe(true);
+    expect(results[0].sevenDayWasInferredReset).toBe(true);
+    expect(results[0].status).toBe("available"); // reflects the inferred 0%, not the stale 90%/100%
+  });
+
   test("looks up each account independently, preserving order", () => {
     const now = 10_000_000;
     const getReportedUsageFn = jest.fn((name) =>
