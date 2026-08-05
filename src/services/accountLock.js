@@ -1,4 +1,10 @@
-const LOCK_TTL_MS = 2 * 60 * 1000;
+// Must stay >= gmailRelayWatcher.js's MAX_WAIT_MS (currently 5 min): a
+// request holds this lock for the entire time it's waiting on the relay
+// mailbox, and if the lock's TTL is shorter than that wait, it silently
+// expires mid-request -- letting a second request for the same account
+// start while the first is still in flight, and both then race for the
+// same sign-in email.
+const LOCK_TTL_MS = 6 * 60 * 1000;
 
 // Module-level Map is the entire "database" for this — in-memory only,
 // consistent with the no-DB design. Lost on restart, which is fine: a

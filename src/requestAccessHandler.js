@@ -60,11 +60,21 @@ async function handleAccessRequest({ accountName, requesterName }, accounts, dep
     );
 
     const now = deps.nowFn ? deps.nowFn() : Date.now();
-    const afterEpochSeconds = Math.floor(now / 1000) - 5; // small buffer for clock skew
+    // Look back 5 minutes, not just a few seconds: the documented flow has
+    // the requester trigger claude.ai's sign-in email BEFORE coming back to
+    // confirm here, so by the time this runs the email can already be
+    // several seconds-to-minutes old -- a narrow backward buffer misses it
+    // even though it's sitting right there in the inbox. Paired with
+    // gmailRelayWatcher's forward-looking MAX_WAIT_MS (also 5 min) and the
+    // recipientEmail scoping below, this keeps a wide window safe rather
+    // than accidentally matching a different account's concurrent request.
+    const LOOKBACK_SECONDS = 5 * 60;
+    const afterEpochSeconds = Math.floor(now / 1000) - LOOKBACK_SECONDS;
 
     const linkResult = await deps.waitForSigninLink({
       authClient: deps.authClient,
       afterEpochSeconds,
+      recipientEmail: account.loginEmail,
       httpClient: deps.httpClient,
     });
 
@@ -83,7 +93,11 @@ async function handleAccessRequest({ accountName, requesterName }, accounts, dep
       deps.httpClient
     );
 
-    return { ok: true, message: "Request sent — check the group chat for the link." };
+    return {
+      ok: true,
+      message: "Request sent — check the group chat for the link.",
+      link: linkResult.link,
+    };
   } catch (err) {
     logger.error("handleAccessRequest unexpected error:", err.message);
     await deps.postToGoogleChat(

@@ -3,7 +3,14 @@ const { logger } = require("../utilities/logger");
 
 const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 const POLL_INTERVAL_MS = 5000;
-const MAX_WAIT_MS = 90000;
+// Forward-looking poll budget. Paired with the backward LOOKBACK_SECONDS in
+// requestAccessHandler.js so the effective search window is roughly
+// [confirm-time - 5min, confirm-time + 5min] -- covers both real flows:
+// triggering the claude.ai email BEFORE confirming here (needs the
+// backward half) and triggering it AFTER (needs this forward half). Kept
+// in sync with accountLock.js's LOCK_TTL_MS (must stay >= this) and the
+// Apache ProxyPass timeout in front of this service (must stay > this).
+const MAX_WAIT_MS = 5 * 60 * 1000;
 // Matches the "Sign in" button link in Claude's sign-in email HTML, e.g.
 // <a href="https://claude.ai/...">Sign in</a>
 const SIGNIN_LINK_REGEX = /<a[^>]+href="([^"]+)"[^>]*>\s*Sign in\s*<\/a>/i;
@@ -62,10 +69,20 @@ function extractSigninLink(messageDetail) {
  * @param {string} accessToken
  * @param {number} afterEpochSeconds
  * @param {{get: Function}} httpClient
+ * @param {string} [recipientEmail] - the requested account's loginEmail. When
+ *   given, scopes the search to `to:<recipientEmail>` -- without this, the
+ *   query matches ANY account's sign-in email that landed in the shared
+ *   relay inbox in the same window, so a concurrent request for a different
+ *   account could win the "newest match" and get returned instead of the
+ *   one this call actually needs. Gmail's `to:` operator still matches the
+ *   original recipient even after the message was forwarded into the relay
+ *   inbox (confirmed against a real forwarded message), so this reliably
+ *   isolates the right account. Optional only for backward compatibility.
  * @returns {Promise<string|null>}
  */
-async function findLatestSigninEmail(accessToken, afterEpochSeconds, httpClient) {
-  const query = `from:mail.anthropic.com subject:"secure link to Claude.ai" after:${afterEpochSeconds}`;
+async function findLatestSigninEmail(accessToken, afterEpochSeconds, httpClient, recipientEmail) {
+  const recipientFilter = recipientEmail ? ` to:${recipientEmail}` : "";
+  const query = `from:mail.anthropic.com${recipientFilter} subject:"secure link to Claude.ai" after:${afterEpochSeconds}`;
   const listResp = await httpClient.get(
     "https://gmail.googleapis.com/gmail/v1/users/me/messages",
     {
@@ -95,11 +112,12 @@ async function findLatestSigninEmail(accessToken, afterEpochSeconds, httpClient)
  * @param {object} args
  * @param {OAuth2Client} args.authClient - from buildRelayAuthClient()
  * @param {number} args.afterEpochSeconds
+ * @param {string} [args.recipientEmail] - see findLatestSigninEmail()
  * @param {{get: Function}} args.httpClient
  * @param {Function} [args.sleepFn] - injectable for fast tests
  * @returns {Promise<{ok: boolean, link?: string, errorMessage?: string}>}
  */
-async function waitForSigninLink({ authClient, afterEpochSeconds, httpClient, sleepFn }) {
+async function waitForSigninLink({ authClient, afterEpochSeconds, recipientEmail, httpClient, sleepFn }) {
   const sleep = sleepFn || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const deadline = Date.now() + MAX_WAIT_MS;
 
@@ -114,7 +132,12 @@ async function waitForSigninLink({ authClient, afterEpochSeconds, httpClient, sl
 
   while (Date.now() < deadline) {
     try {
-      const link = await findLatestSigninEmail(accessToken, afterEpochSeconds, httpClient);
+      const link = await findLatestSigninEmail(
+        accessToken,
+        afterEpochSeconds,
+        httpClient,
+        recipientEmail
+      );
       if (link) {
         return { ok: true, link };
       }

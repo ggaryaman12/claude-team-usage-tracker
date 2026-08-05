@@ -91,6 +91,62 @@ describe("findLatestSigninEmail", () => {
       { headers: { Authorization: "Bearer token" }, params: { format: "full" } }
     );
   });
+
+  // Root cause of "bot missed a link that was actually in the inbox": the
+  // search had no way to tell WHICH account's sign-in email it was looking
+  // for, so a concurrent request for a different account (or any other
+  // Claude.ai email landing in the shared relay inbox around the same time)
+  // could win the "newest match" race instead of the one this request
+  // actually needs. Confirmed live against the real relay mailbox: Gmail's
+  // `to:` operator matches the ORIGINAL recipient even after the message
+  // was forwarded into the shared inbox, so scoping the query to
+  // `to:<the account's loginEmail>` reliably isolates it.
+  test("scopes the Gmail query to the requested account's loginEmail, not just any sign-in email", async () => {
+    const httpClient = {
+      get: jest
+        .fn()
+        .mockResolvedValueOnce({ data: { messages: [{ id: "msg1" }] } })
+        .mockResolvedValueOnce({
+          data: {
+            payload: {
+              mimeType: "text/html",
+              body: { data: base64Url('<a href="https://claude.ai/x">Sign in</a>') },
+            },
+          },
+        }),
+    };
+
+    await findLatestSigninEmail("token", 1700000000, httpClient, "gaurav@example.com");
+
+    expect(httpClient.get).toHaveBeenNthCalledWith(
+      1,
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+      {
+        headers: { Authorization: "Bearer token" },
+        params: {
+          q: 'from:mail.anthropic.com to:gaurav@example.com subject:"secure link to Claude.ai" after:1700000000',
+          maxResults: 5,
+        },
+      }
+    );
+  });
+
+  test("falls back to the unscoped query when no recipientEmail is given (backward compatible)", async () => {
+    const httpClient = { get: jest.fn().mockResolvedValue({ data: {} }) };
+    await findLatestSigninEmail("token", 1700000000, httpClient);
+
+    expect(httpClient.get).toHaveBeenNthCalledWith(
+      1,
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+      {
+        headers: { Authorization: "Bearer token" },
+        params: {
+          q: 'from:mail.anthropic.com subject:"secure link to Claude.ai" after:1700000000',
+          maxResults: 5,
+        },
+      }
+    );
+  });
 });
 
 describe("waitForSigninLink", () => {
@@ -139,5 +195,34 @@ describe("waitForSigninLink", () => {
       errorMessage: "Could not authenticate to the relay mailbox.",
     });
     expect(httpClient.get).not.toHaveBeenCalled();
+  });
+
+  test("threads recipientEmail through to the Gmail query", async () => {
+    const authClient = { getAccessToken: jest.fn().mockResolvedValue({ token: "tok" }) };
+    const httpClient = {
+      get: jest
+        .fn()
+        .mockResolvedValueOnce({ data: { messages: [{ id: "m1" }] } })
+        .mockResolvedValueOnce({
+          data: {
+            payload: {
+              mimeType: "text/html",
+              body: { data: base64Url('<a href="https://claude.ai/x">Sign in</a>') },
+            },
+          },
+        }),
+    };
+
+    const result = await waitForSigninLink({
+      authClient,
+      afterEpochSeconds: 1700000000,
+      recipientEmail: "gaurav@example.com",
+      httpClient,
+      sleepFn: jest.fn(),
+    });
+
+    expect(result).toEqual({ ok: true, link: "https://claude.ai/x" });
+    const [, params] = httpClient.get.mock.calls[0];
+    expect(params.params.q).toContain("to:gaurav@example.com");
   });
 });

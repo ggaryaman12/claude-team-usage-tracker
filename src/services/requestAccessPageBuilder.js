@@ -98,10 +98,18 @@ function buildRequestAccessPageHtml(account, basePath, opts = {}) {
       ${errorMessage ? `<div class="form-error">${escapeHtml(errorMessage)}</div>` : ""}
       <input type="email" id="requesterEmail" name="requesterEmail" placeholder="you@example.com" value="${escapeHtml(prefillEmail)}" class="${errorMessage ? "has-error" : ""}" required autofocus="${errorMessage ? "true" : "false"}" />
       <div class="hint">Must match a known team email.</div>
-      <button type="submit">Confirm — I've submitted the claude.ai form</button>
+      <button type="submit" id="confirm-btn">Confirm — I've submitted the claude.ai form</button>
+      <div class="hint" id="waiting-hint" style="display:none; margin-top:10px;">Watching for the sign-in email — this can take up to 5 minutes, please don't close this tab or submit again.</div>
     </form>
   </div>
   <script>
+    document.querySelector("form").addEventListener("submit", function () {
+      var btn = document.getElementById("confirm-btn");
+      var hint = document.getElementById("waiting-hint");
+      btn.disabled = true;
+      btn.textContent = "Watching for the link…";
+      hint.style.display = "block";
+    });
     document.querySelectorAll(".copy-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var target = document.getElementById(btn.getAttribute("data-copy-target"));
@@ -131,4 +139,80 @@ function buildRequestAccessPageHtml(account, basePath, opts = {}) {
 </html>`;
 }
 
-module.exports = { buildRequestAccessPageHtml };
+/**
+ * Renders the outcome page shown right after the requester submits the
+ * confirm form — same URL they already posted to, so no extra endpoint or
+ * client-side polling needed. The sign-in link (when found) is shown here
+ * directly as a clickable button, in addition to the existing post in the
+ * group chat — this page is just the requester's own copy of it, since not
+ * everyone is watching the group at that exact moment.
+ *
+ * @param {{name: string}} account
+ * @param {string} basePath
+ * @param {{ok: boolean, message: string, link?: string}} result - from handleAccessRequest()
+ * @returns {string} full HTML document
+ */
+function buildRequestResultPageHtml(account, basePath, result) {
+  const { ok, message, link } = result;
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${ok ? "Sign-in link ready" : "Request status"} — ${escapeHtml(account.name)}</title>
+<style>
+  :root { color-scheme: light dark; --bg:#faf7f2; --card-bg:#ffffff; --text:#2b2019; --muted:#7a6f63; --border:#ece4d8; --accent:#da7756; --accent-dark:#c05f3f; --ok:#1e8e3e; --err:#d93025; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1a1613; --card-bg:#242019; --text:#f0e9e0; --muted:#a89c8d; --border:#3a332a; --accent:#e08a68; --accent-dark:#da7756; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    padding: 32px 20px; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .card {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px;
+    max-width: 460px; width: 100%; padding: 28px 26px;
+    box-shadow: 0 12px 32px -12px rgba(0,0,0,0.15);
+  }
+  .spark { font-size: 1.6rem; margin-bottom: 8px; }
+  h1 { font-size: 1.2rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 20px; line-height: 1.5; }
+  .status-badge {
+    display: inline-block; border-radius: 999px; padding: 4px 12px; font-size: 0.78rem; font-weight: 600;
+    margin-bottom: 16px;
+  }
+  .status-badge.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+  .status-badge.err { background: color-mix(in srgb, var(--err) 12%, transparent); color: var(--err); }
+  .link-btn {
+    display: block; width: 100%; text-align: center; box-sizing: border-box;
+    background: var(--accent); color: #fff; text-decoration: none; font-weight: 600;
+    border-radius: 8px; padding: 12px 14px; font-size: 0.92rem; margin-bottom: 12px;
+  }
+  .link-btn:hover { background: var(--accent-dark); }
+  .back-link { display: inline-block; font-size: 0.82rem; color: var(--muted); margin-top: 4px; }
+  a.back-link { color: var(--accent-dark); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="spark">${ok ? "✅" : "⚠️"}</div>
+    <span class="status-badge ${ok ? "ok" : "err"}">${ok ? "Link found" : "Not resolved yet"}</span>
+    <h1>${ok ? `Sign-in link for ${escapeHtml(account.name)}` : `Request for ${escapeHtml(account.name)}`}</h1>
+    <div class="sub">${escapeHtml(message)}${ok ? " It's also posted in the group, tagged to you." : ""}</div>
+    ${ok && link ? `<a class="link-btn" href="${escapeHtml(link)}" target="_blank" rel="noopener">Open sign-in link</a>` : ""}
+    <a class="back-link" href="${basePath}/request?account=${encodeURIComponent(account.name)}">&larr; Back</a>
+  </div>
+  ${buildPetWidgetHtml({
+    claudeLines: ok
+      ? ["Found it! Link's above and in the group.", "One click and you're in."]
+      : ["Hmm, that one needs another look.", "Check the group for details, or try again."],
+    codexLines: ok ? ["link retrieved.", "delivered to page + chat."] : ["no link yet.", "see message above."],
+    bugLines: ok ? ["found the link before I found my footing."] : ["still buggy, still trying."],
+  })}
+</body>
+</html>`;
+}
+
+module.exports = { buildRequestAccessPageHtml, buildRequestResultPageHtml };
