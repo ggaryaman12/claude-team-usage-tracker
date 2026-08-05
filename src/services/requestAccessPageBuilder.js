@@ -150,10 +150,27 @@ function buildRequestAccessPageHtml(account, basePath, opts = {}) {
  * @param {{name: string}} account
  * @param {string} basePath
  * @param {{ok: boolean, message: string, link?: string}} result - from handleAccessRequest()
+ * @param {string} [requesterEmail] - when given and result failed, renders a
+ *   "Check again" form (POSTs to /request/retry) so the requester can do a
+ *   one-shot recheck without resubmitting the whole confirm form. Omitted
+ *   entirely (no retry form) when there's no requesterEmail to resubmit.
+ * @param {number} [requestedAtMs] - when the ORIGINAL request started. The
+ *   retry form (and its server-side counterpart, retrySigninLinkCheck) only
+ *   stays usable for RETRY_WINDOW_MS after this -- past that, omitted here
+ *   entirely and replaced with a note to submit a fresh request, rather
+ *   than leaving a button up that the server will just reject anyway.
+ *   Falls back to always-available when omitted (backward compatible).
  * @returns {string} full HTML document
  */
-function buildRequestResultPageHtml(account, basePath, result) {
+function buildRequestResultPageHtml(account, basePath, result, requesterEmail, requestedAtMs) {
   const { ok, message, link } = result;
+  // Mirrors RETRY_WINDOW_MS in requestAccessHandler.js -- kept as a literal
+  // here rather than a shared import since this module has no dependency
+  // on that one today and the two are cheap to keep in sync by comment.
+  const RETRY_WINDOW_MS = 10 * 60 * 1000;
+  const retryDeadlineMs = requestedAtMs !== undefined ? requestedAtMs + RETRY_WINDOW_MS : null;
+  const retryExpired = retryDeadlineMs !== null && Date.now() > retryDeadlineMs;
+  const showRetry = !ok && requesterEmail && !retryExpired;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -191,6 +208,12 @@ function buildRequestResultPageHtml(account, basePath, result) {
     border-radius: 8px; padding: 12px 14px; font-size: 0.92rem; margin-bottom: 12px;
   }
   .link-btn:hover { background: var(--accent-dark); }
+  .retry-btn {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 10px 14px; font-size: 0.88rem; font-weight: 600; cursor: pointer;
+    margin-bottom: 12px;
+  }
+  .retry-btn:hover { background: var(--card-bg); }
   .back-link { display: inline-block; font-size: 0.82rem; color: var(--muted); margin-top: 4px; }
   a.back-link { color: var(--accent-dark); }
 </style>
@@ -202,8 +225,51 @@ function buildRequestResultPageHtml(account, basePath, result) {
     <h1>${ok ? `Sign-in link for ${escapeHtml(account.name)}` : `Request for ${escapeHtml(account.name)}`}</h1>
     <div class="sub">${escapeHtml(message)}${ok ? " It's also posted in the group, tagged to you." : ""}</div>
     ${ok && link ? `<a class="link-btn" href="${escapeHtml(link)}" target="_blank" rel="noopener">Open sign-in link</a>` : ""}
+    ${
+      showRetry
+        ? `<form method="POST" action="${basePath}/request/retry" id="retry-form">
+      <input type="hidden" name="account" value="${escapeHtml(account.name)}" />
+      <input type="hidden" name="requesterEmail" value="${escapeHtml(requesterEmail)}" />
+      <input type="hidden" name="requestedAt" value="${retryDeadlineMs !== null ? requestedAtMs : ""}" />
+      <button type="submit" class="retry-btn" id="retry-btn">Check again</button>
+    </form>
+    <div class="hint" id="retry-expiry-hint" style="display:none; margin-top:-6px; margin-bottom:12px;"></div>`
+        : !ok && requesterEmail
+          ? `<div class="sub" style="margin-top:-8px;">This link is more than 10 minutes old — submit a new request instead.</div>`
+          : ""
+    }
     <a class="back-link" href="${basePath}/request?account=${encodeURIComponent(account.name)}">&larr; Back</a>
   </div>
+  ${
+    showRetry && retryDeadlineMs !== null
+      ? `<script>
+  (function () {
+    var deadline = ${retryDeadlineMs};
+    var form = document.getElementById("retry-form");
+    var btn = document.getElementById("retry-btn");
+    var hint = document.getElementById("retry-expiry-hint");
+    if (!form || !btn || !hint) return;
+
+    function tick() {
+      var msLeft = deadline - Date.now();
+      if (msLeft <= 0) {
+        form.style.display = "none";
+        hint.textContent = "This link is more than 10 minutes old — submit a new request instead.";
+        hint.style.display = "block";
+        clearInterval(timer);
+        return;
+      }
+      var minutes = Math.floor(msLeft / 60000);
+      var seconds = Math.floor((msLeft % 60000) / 1000);
+      btn.textContent = "Check again (" + minutes + ":" + String(seconds).padStart(2, "0") + " left)";
+    }
+
+    tick();
+    var timer = setInterval(tick, 1000);
+  })();
+  </script>`
+      : ""
+  }
   ${buildPetWidgetHtml({
     claudeLines: ok
       ? ["Found it! Link's above and in the group.", "One click and you're in."]

@@ -9,14 +9,14 @@ const { composeUsageResults } = require("./services/usageReportComposer");
 const { processUsageReport } = require("./services/usageReportProcessor");
 const { postToGoogleChat, postMessageToGoogleChat } = require("./services/googleChatWebhook");
 const { tryAcquireLock, releaseLock } = require("./services/accountLock");
-const { waitForSigninLink, buildRelayAuthClient } = require("./services/gmailRelayWatcher");
+const { waitForSigninLink, findLatestSigninEmail, buildRelayAuthClient } = require("./services/gmailRelayWatcher");
 const { buildRelayAuthUrl, completeRelayAuth } = require("./services/gmailRelayAuth");
 const { loadRefreshToken } = require("./config/relayTokenStore");
 const { getReportedUsage, saveReportedUsage } = require("./config/reportedUsageStore");
 const { getUsageHistory, appendUsageHistory, pruneAllAccountsHistory } = require("./config/usageHistoryStore");
 const { summarizeAccountAnalytics, summarizeTeamAnalytics } = require("./services/usageAnalytics");
 const { msUntilNextTopOfHour } = require("./services/hourlyScheduler");
-const { handleAccessRequest } = require("./requestAccessHandler");
+const { handleAccessRequest, retrySigninLinkCheck } = require("./requestAccessHandler");
 const { buildAuthUrl, setupForwardingFilter } = require("./services/gmailFilterAutomation");
 const { buildInstallScript } = require("./services/installHookScriptBuilder");
 const { buildDashboardHtml } = require("./services/dashboardPageBuilder");
@@ -35,7 +35,7 @@ const {
   addKnownRequester,
   removeKnownRequester,
 } = require("./config/knownRequestersStore");
-const { buildRequestAccessPageHtml } = require("./services/requestAccessPageBuilder");
+const { buildRequestAccessPageHtml, buildRequestResultPageHtml } = require("./services/requestAccessPageBuilder");
 const { buildTeamLoginPageHtml } = require("./services/teamLoginPageBuilder");
 const { buildAdminLoginPageHtml } = require("./services/adminLoginPageBuilder");
 const { buildAdminRosterPageHtml } = require("./services/adminRosterPageBuilder");
@@ -491,6 +491,11 @@ app.get(`${BASE_PATH}/request`, (req, res) => {
 app.post(`${BASE_PATH}/request`, async (req, res) => {
   const accountName = (req.body && req.body.account) || "";
   const requesterEmail = (req.body && req.body.requesterEmail) || "";
+  // Stamped once, right when this request starts, and carried through the
+  // result page's hidden field into any later /request/retry click -- the
+  // 10-minute retry window (see requestAccessHandler.js's RETRY_WINDOW_MS)
+  // anchors to THIS moment, not to whenever someone happens to click retry.
+  const requestedAtMs = Date.now();
 
   if (!accountName || !requesterEmail) {
     return res.status(400).send("Missing account or requesterEmail.");
@@ -530,10 +535,71 @@ app.post(`${BASE_PATH}/request`, async (req, res) => {
       authClient,
       httpClient: axios,
       webhookUrl: GOOGLE_CHAT_WEBHOOK_URL,
+      nowFn: () => requestedAtMs,
     }
   );
 
-  return res.status(result.ok ? 200 : 409).send(result.message);
+  return res
+    .status(result.ok ? 200 : 409)
+    .send(buildRequestResultPageHtml(account, BASE_PATH, result, requesterEmail, requestedAtMs));
+});
+
+// POST: backs the "Check again" button on the failure result page above --
+// a single, immediate recheck of the relay inbox (see
+// requestAccessHandler.js's retrySigninLinkCheck), not another full
+// wait-and-poll cycle. Same roster validation as /request since it's a
+// fresh POST, not a continuation of any session.
+app.post(`${BASE_PATH}/request/retry`, async (req, res) => {
+  const accountName = (req.body && req.body.account) || "";
+  const requesterEmail = (req.body && req.body.requesterEmail) || "";
+  // Empty string / missing means an older result page with no expiry
+  // concept (or a manually-crafted request) -- treated as "no deadline"
+  // by retrySigninLinkCheck, same as omitting it entirely.
+  const requestedAtRaw = req.body && req.body.requestedAt;
+  const requestedAtMs = requestedAtRaw ? Number(requestedAtRaw) : undefined;
+
+  if (!accountName || !requesterEmail) {
+    return res.status(400).send("Missing account or requesterEmail.");
+  }
+
+  const accounts = loadAccounts();
+  const account = accounts.find((a) => a.name === accountName);
+  if (!account) {
+    return res.status(404).send(`No account named "${accountName}" is configured.`);
+  }
+
+  const requester = findKnownRequesterByEmail(requesterEmail);
+  if (!requester) {
+    return res
+      .status(403)
+      .send(
+        buildRequestAccessPageHtml(account, BASE_PATH, {
+          errorMessage: `"${requesterEmail}" isn't on the known team roster — double-check the email and try again.`,
+          prefillEmail: requesterEmail,
+        })
+      );
+  }
+
+  const refreshToken = loadRefreshToken();
+  const authClient = refreshToken
+    ? buildRelayAuthClient(GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, refreshToken)
+    : null;
+
+  const result = await retrySigninLinkCheck(
+    { accountName, requesterName: requester.name, requestedAtMs },
+    accounts,
+    {
+      authClient,
+      findLatestSigninEmail,
+      postToGoogleChat,
+      httpClient: axios,
+      webhookUrl: GOOGLE_CHAT_WEBHOOK_URL,
+    }
+  );
+
+  return res
+    .status(result.ok ? 200 : 409)
+    .send(buildRequestResultPageHtml(account, BASE_PATH, result, requesterEmail, requestedAtMs));
 });
 
 // One-click relay-mailbox authorization — the relay mailbox owner visits

@@ -111,4 +111,94 @@ async function handleAccessRequest({ accountName, requesterName }, accounts, dep
   }
 }
 
-module.exports = { handleAccessRequest };
+// Kept in sync with the LOOKBACK_SECONDS used inside handleAccessRequest --
+// both express "how far back is it still reasonable to find this account's
+// sign-in email."
+const RETRY_LOOKBACK_SECONDS = 5 * 60;
+
+// How long the "Check again" button stays usable after the ORIGINAL
+// request (not reset by each retry click) -- past this, resurfacing an
+// old link doesn't make sense and the requester should just start over.
+// Mirrored client-side in requestAccessPageBuilder.js (button hides
+// itself once this elapses) and enforced here too, since the client-side
+// hide is only a UX nicety, not a real guard against a stale form POST.
+const RETRY_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * One-shot recheck of the relay inbox -- backs the "Check again" button on
+ * the failure page after the original wait in handleAccessRequest already
+ * timed out. Unlike handleAccessRequest this does exactly ONE Gmail check,
+ * not a poll loop: no lock (the original request already released it by
+ * the time this button is visible), no "X requested access" chat
+ * announcement (that already happened once), and no re-waiting -- just
+ * "look right now, same 5-minute backward window, same account-scoped
+ * query." Only posts to chat when it actually finds something, so
+ * repeated clicks while nothing's arrived yet don't spam the group.
+ *
+ * Never throws -- mirrors handleAccessRequest's failure-mode contract.
+ *
+ * @param {{accountName: string, requesterName: string, requestedAtMs?: number}} input
+ *   requestedAtMs is when the ORIGINAL request started (carried through
+ *   from the result page's hidden field) -- used to expire the retry
+ *   button after RETRY_WINDOW_MS. Treated as not-yet-expired if omitted.
+ * @param {Array<{name, contact, loginEmail}>} accounts
+ * @param {object} deps - authClient, findLatestSigninEmail (from
+ *   gmailRelayWatcher.js), postToGoogleChat, httpClient, webhookUrl, nowFn
+ * @returns {Promise<{ok: boolean, message: string, link?: string, expired?: boolean}>}
+ */
+async function retrySigninLinkCheck({ accountName, requesterName, requestedAtMs }, accounts, deps) {
+  const account = accounts.find((a) => a.name === accountName);
+  if (!account) {
+    return { ok: false, message: `No account named "${accountName}" is configured.` };
+  }
+
+  if (!deps.authClient) {
+    return {
+      ok: false,
+      message:
+        "The relay mailbox hasn't been authorized yet — visit /claude-usage-bot/setup-relay-mailbox once to finish setup, then try again.",
+    };
+  }
+
+  const now = deps.nowFn ? deps.nowFn() : Date.now();
+  if (requestedAtMs !== undefined && now - requestedAtMs > RETRY_WINDOW_MS) {
+    return {
+      ok: false,
+      message: "This retry window has expired — go back and submit a new request.",
+      expired: true,
+    };
+  }
+
+  try {
+    const { token } = await deps.authClient.getAccessToken();
+    const afterEpochSeconds = Math.floor(now / 1000) - RETRY_LOOKBACK_SECONDS;
+
+    const link = await deps.findLatestSigninEmail(
+      token,
+      afterEpochSeconds,
+      deps.httpClient,
+      account.loginEmail
+    );
+
+    if (!link) {
+      return {
+        ok: false,
+        message:
+          "Still nothing yet — make sure you've submitted claude.ai's login form with their email, then check again in a moment.",
+      };
+    }
+
+    await deps.postToGoogleChat(
+      `@${requesterName} here's the sign-in link for ${account.name}: ${link}`,
+      deps.webhookUrl,
+      deps.httpClient
+    );
+
+    return { ok: true, message: "Found it — check the group chat too.", link };
+  } catch (err) {
+    logger.error("retrySigninLinkCheck unexpected error:", err.message);
+    return { ok: false, message: "Something went wrong checking again — try once more." };
+  }
+}
+
+module.exports = { handleAccessRequest, retrySigninLinkCheck };
